@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JiraLog Dashboard</title>
+    <!-- Angular Material Icons & Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <!-- Tailwind CSS for quick layout (CDN) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: 'Roboto', sans-serif; background-color: #f5f5f5; }
+        .mat-card { background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); padding: 20px; }
+        .btn-primary { background-color: #3f51b5; color: white; padding: 10px 20px; border-radius: 4px; font-weight: 500; transition: background 0.3s; }
+        .btn-primary:hover { background-color: #303f9f; }
+        .btn-secondary { background-color: #e0e0e0; color: #333; padding: 10px 20px; border-radius: 4px; font-weight: 500; }
+        header { background-color: #3f51b5; color: white; padding: 15px 30px; display: flex; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+        .sidebar { width: 250px; background: white; height: calc(100vh - 64px); border-right: 1px solid #ddd; }
+        .nav-item { padding: 15px 25px; display: flex; align-items: center; color: #555; cursor: pointer; }
+        .nav-item:hover { background-color: #f0f0f0; }
+        .nav-item.active { color: #3f51b5; background-color: #e8eaf6; border-right: 4px solid #3f51b5; }
+        .nav-item i { margin-right: 15px; }
+        .loading-overlay { position: fixed; top:0; left:0; width:100%; height:100%; background: rgba(255,255,255,0.7); display: none; justify-content: center; align-items: center; z-index: 1000; }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <div id="loading" class="loading-overlay">
+        <div class="flex flex-col items-center">
+            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+            <p class="mt-4 text-indigo-600 font-medium">Procesando...</p>
+        </div>
+    </div>
+
+    <header>
+        <i class="material-icons mr-4">dashboard</i>
+        <h1 class="text-xl font-bold">JiraLog Manager</h1>
+    </header>
+
+    <div class="flex">
+        <!-- Sidebar -->
+        <div class="sidebar hidden md:block">
+            <nav class="mt-4">
+                <div class="nav-item active" onclick="showSection('dashboard')">
+                    <i class="material-icons">home</i> Dashboard
+                </div>
+                <div class="nav-item" onclick="showSection('reports')">
+                    <i class="material-icons">description</i> Reportes PDF
+                </div>
+                <div class="nav-item" onclick="showSection('ingest')">
+                    <i class="material-icons">cloud_upload</i> Ingesta Masiva
+                </div>
+                <div class="nav-item" onclick="showSection('subtasks')">
+                    <i class="material-icons">analytics</i> Análisis Subtareas
+                </div>
+                <div class="nav-item" onclick="showSection('tasks')">
+                    <i class="material-icons">list</i> Tareas Jira
+                </div>
+            </nav>
+        </div>
+
+        <!-- Main Content -->
+        <main class="flex-1 p-8">
+            <!-- Dashboard Home -->
+            <section id="dashboard-section">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-2xl font-semibold">Resumen</h2>
+                    <div class="bg-white px-4 py-2 rounded-lg shadow-sm border border-gray-200 flex items-center">
+                        <i class="material-icons text-indigo-600 mr-2">person</i>
+                        <span id="displayUserName" class="font-medium text-gray-700 italic">Cargando usuario...</span>
+                    </div>
+                </div>
+                
+                <!-- Month Progress Chart Card -->
+                <div class="mat-card mb-8">
+                    <div class="flex flex-col md:flex-row items-center gap-8">
+                        <div class="w-full md:w-1/3">
+                            <h3 class="text-lg font-bold mb-4 text-center">Progreso de Horas del Mes</h3>
+                            <div class="relative" style="height: 200px;">
+                                <canvas id="hoursChart"></canvas>
+                            </div>
+                        </div>
+                        <div class="flex-1">
+                            <h4 class="text-xl font-medium text-indigo-700" id="statsMonthTitle">Cargando estadísticas...</h4>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                                <div class="bg-indigo-50 p-4 rounded-lg">
+                                    <p class="text-sm text-indigo-600 font-medium">Horas Registradas</p>
+                                    <p class="text-2xl font-bold" id="totalHoursVal">-</p>
+                                </div>
+                                <div class="bg-blue-50 p-4 rounded-lg">
+                                    <p class="text-sm text-blue-600 font-medium">Horas Esperadas (9h/día)</p>
+                                    <p class="text-2xl font-bold" id="expectedHoursVal">-</p>
+                                </div>
+                                <div class="bg-green-50 p-4 rounded-lg">
+                                    <p class="text-sm text-green-600 font-medium">Cumplimiento</p>
+                                    <p class="text-2xl font-bold" id="percentageVal">-</p>
+                                </div>
+                                <div class="bg-orange-50 p-4 rounded-lg">
+                                    <p class="text-sm text-orange-600 font-medium">Días Laborales (Hoy)</p>
+                                    <p class="text-2xl font-bold" id="workingDaysVal">-</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="mat-card cursor-pointer hover:shadow-lg transition-shadow" onclick="showSection('reports')">
+                        <div class="flex items-center mb-4">
+                            <i class="material-icons text-blue-600 text-3xl mr-3">picture_as_pdf</i>
+                            <h3 class="text-lg font-bold">Reportes de Horas</h3>
+                        </div>
+                        <p class="text-gray-600">Descarga tu reporte de horas trabajadas en formato PDF.</p>
+                    </div>
+                    <div class="mat-card cursor-pointer hover:shadow-lg transition-shadow" onclick="showSection('ingest')">
+                        <div class="flex items-center mb-4">
+                            <i class="material-icons text-green-600 text-3xl mr-3">file_upload</i>
+                            <h3 class="text-lg font-bold">Ingesta Masiva</h3>
+                        </div>
+                        <p class="text-gray-600">Carga actividades desde un archivo Excel de forma masiva.</p>
+                    </div>
+                    <div class="mat-card cursor-pointer hover:shadow-lg transition-shadow" onclick="showSection('subtasks')">
+                        <div class="flex items-center mb-4">
+                            <i class="material-icons text-orange-600 text-3xl mr-3">assignment</i>
+                            <h3 class="text-lg font-bold">Análisis de Subtareas</h3>
+                        </div>
+                        <p class="text-gray-600">Analiza y descarga reportes de subtareas por proyecto.</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Reports Section -->
+            <section id="reports-section" class="hidden">
+                <h2 class="text-2xl font-semibold mb-6">Descargar Reporte de Horas</h2>
+                <div class="mat-card max-w-2xl">
+                    <p class="mb-6 text-gray-600">Selecciona el rango de fechas para generar tu reporte de actividades registradas en Jira.</p>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Fecha Inicio</label>
+                            <input type="date" id="startDate" class="w-full border rounded p-2">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Fecha Fin</label>
+                            <input type="date" id="endDate" class="w-full border rounded p-2">
+                        </div>
+                    </div>
+                    <button onclick="downloadReport()" class="btn-primary flex items-center">
+                        <i class="material-icons mr-2">download</i> Generar PDF
+                    </button>
+                </div>
+            </section>
+
+            <!-- Ingest Section -->
+            <section id="ingest-section" class="hidden">
+                <h2 class="text-2xl font-semibold mb-6">Carga Masiva de Actividades</h2>
+                <div class="mat-card max-w-2xl">
+                    <p class="mb-6 text-gray-600">Sube tu archivo Excel (.xlsx) con las actividades para procesarlas e ingresarlas a Jira.</p>
+                    <div class="border-2 border-dashed border-gray-300 rounded-lg p-12 text-center mb-6 hover:border-indigo-500 transition-colors cursor-pointer" onclick="document.getElementById('excelFile').click()">
+                        <i class="material-icons text-5xl text-gray-400 mb-2">cloud_upload</i>
+                        <p class="text-lg font-medium">Haz clic para seleccionar o arrastra el archivo</p>
+                        <p class="text-sm text-gray-500">Solo archivos Excel (.xlsx)</p>
+                        <input type="file" id="excelFile" class="hidden" accept=".xlsx" onchange="handleFileSelect(event)">
+                    </div>
+                    <div id="fileInfo" class="hidden mb-6 p-4 bg-blue-50 border border-blue-200 rounded flex items-center justify-between">
+                        <div class="flex items-center">
+                            <i class="material-icons text-blue-500 mr-3">insert_drive_file</i>
+                            <span id="fileName" class="font-medium">archivo.xlsx</span>
+                        </div>
+                        <button onclick="clearFile()" class="text-red-500 hover:text-red-700">
+                            <i class="material-icons">close</i>
+                        </button>
+                    </div>
+                    <button id="uploadBtn" disabled onclick="uploadExcel()" class="bg-gray-400 text-white padding px-6 py-2 rounded-md font-medium cursor-not-allowed flex items-center">
+                        <i class="material-icons mr-2">rocket_launch</i> Iniciar Ingesta
+                    </button>
+                    <p class="mt-4 text-sm text-gray-500 italic">* Al finalizar se descargará un Excel con el resultado del procesamiento.</p>
+                </div>
+            </section>
+
+            <!-- Subtasks Analysis Section -->
+            <section id="subtasks-section" class="hidden">
+                <h2 class="text-2xl font-semibold mb-6">Análisis de Subtareas</h2>
+                <div class="mat-card max-w-2xl">
+                    <p class="mb-6 text-gray-600">Ingresa la clave de la tarea padre (ej. CDST05-123) para generar un análisis de sus subtareas en PDF.</p>
+                    <div class="mb-6">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Key de Tarea Padre</label>
+                        <div class="flex gap-2">
+                            <input type="text" id="parentTaskKey" placeholder="PROY-123" class="flex-1 border rounded p-2 focus:ring-2 focus:ring-indigo-500 outline-none">
+                            <button onclick="downloadSubtaskReport(document.getElementById('parentTaskKey').value)" class="btn-primary flex items-center">
+                                <i class="material-icons mr-2">analytics</i> Generar Análisis
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="tasks-section" class="hidden">
+                <h2 class="text-2xl font-semibold mb-6">Tareas Asignadas y Subtareas</h2>
+                <div class="mat-card mb-6">
+                    <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4">
+                        <h3 class="text-lg font-bold">Mis Tareas en Jira</h3>
+                        <div class="flex items-center bg-gray-100 rounded-md px-3 py-1 w-full md:w-1/3 border border-gray-300">
+                            <i class="material-icons text-gray-500 mr-2">search</i>
+                            <input type="text" id="taskSearchInput" placeholder="Buscar por key o resumen..." 
+                                   class="bg-transparent border-none focus:outline-none w-full text-sm py-1"
+                                   onkeyup="filterTasks()">
+                        </div>
+                        <button onclick="loadTasks()" class="text-indigo-600 hover:text-indigo-800 flex items-center">
+                            <i class="material-icons text-sm mr-1">refresh</i> Actualizar
+                        </button>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Key</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Resumen</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fecha Registro</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Duración</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Estado</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tasksTableBody" class="bg-white divide-y divide-gray-200">
+                                <!-- Tareas se cargarán aquí -->
+                                <tr>
+                                    <td colspan="5" class="px-6 py-4 text-center text-gray-500 italic">Haz clic en actualizar para cargar las tareas</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        // Set default dates
+        document.getElementById('startDate').valueAsDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        document.getElementById('endDate').valueAsDate = new Date();
+
+        // Initial load
+        window.onload = () => {
+            loadMonthStats();
+        };
+
+        let hoursChart = null;
+
+        async function loadMonthStats() {
+            try {
+                const response = await fetch('/api/report/stats/month');
+                if (response.ok) {
+                    const stats = await response.json();
+                    
+                    document.getElementById('statsMonthTitle').textContent = `Estadísticas de ${stats.month} ${stats.year}`;
+                    document.getElementById('totalHoursVal').textContent = `${stats.totalHours.toFixed(1)}h`;
+                    document.getElementById('expectedHoursVal').textContent = `${stats.expectedHours}h`;
+                    document.getElementById('percentageVal').textContent = `${stats.percentage.toFixed(1)}%`;
+                    document.getElementById('workingDaysVal').textContent = stats.workingDays;
+                    document.getElementById('displayUserName').textContent = stats.userName || 'Usuario';
+
+                    renderChart(stats.totalHours, stats.expectedHours);
+                }
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
+        }
+
+        function renderChart(total, expected) {
+            const ctx = document.getElementById('hoursChart').getContext('2d');
+            
+            if (hoursChart) {
+                hoursChart.destroy();
+            }
+
+            const remaining = Math.max(0, expected - total);
+            const extra = Math.max(0, total - expected);
+
+            const data = {
+                labels: ['Registradas', 'Pendientes'],
+                datasets: [{
+                    data: [total, remaining],
+                    backgroundColor: ['#3f51b5', '#e0e0e0'],
+                    borderWidth: 0
+                }]
+            };
+
+            if (extra > 0) {
+                data.labels = ['Registradas (Meta)', 'Excedente'];
+                data.datasets[0].data = [expected, extra];
+                data.datasets[0].backgroundColor = ['#4caf50', '#81c784'];
+            }
+
+            hoursChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: data,
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '70%',
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    }
+                }
+            });
+        }
+
+        function showSection(section) {
+            // Hide all
+            ['dashboard', 'reports', 'ingest', 'subtasks', 'tasks'].forEach(s => {
+                document.getElementById(s + '-section').classList.add('hidden');
+            });
+            // Show target
+            document.getElementById(section + '-section').classList.remove('hidden');
+            
+            // Update nav active state
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            const index = ['dashboard', 'reports', 'ingest', 'subtasks', 'tasks'].indexOf(section);
+            document.querySelectorAll('.nav-item')[index].classList.add('active');
+
+            if (section === 'tasks') loadTasks();
+            if (section === 'dashboard') {
+                // Recargar estadísticas del mes al volver al dashboard para que estén siempre actualizadas
+                loadMonthStats();
+            }
+        }
+
+        async function downloadReport() {
+            const start = document.getElementById('startDate').value;
+            const end = document.getElementById('endDate').value;
+            
+            if (!start || !end) {
+                alert('Por favor selecciona ambas fechas');
+                return;
+            }
+
+            setLoading(true);
+            try {
+                const response = await fetch(`/api/report/pdf?startDate=${start}&endDate=${end}`);
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `reporte-horas-${start}-a-${end}.pdf`;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                } else {
+                    alert('Error al generar el reporte');
+                }
+            } catch (error) {
+                console.error(error);
+                alert('Error de conexión');
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file) {
+                document.getElementById('fileName').textContent = file.name;
+                document.getElementById('fileInfo').classList.remove('hidden');
+                const btn = document.getElementById('uploadBtn');
+                btn.disabled = false;
+                btn.classList.remove('bg-gray-400', 'cursor-not-allowed');
+                btn.classList.add('bg-indigo-600', 'hover:bg-indigo-700');
+            }
+        }
+
+        function clearFile() {
+            document.getElementById('excelFile').value = '';
+            document.getElementById('fileInfo').classList.add('hidden');
+            const btn = document.getElementById('uploadBtn');
+            btn.disabled = true;
+            btn.classList.add('bg-gray-400', 'cursor-not-allowed');
+            btn.classList.remove('bg-indigo-600', 'hover:bg-indigo-700');
+        }
+
+        async function uploadExcel() {
+            const fileInput = document.getElementById('excelFile');
+            if (!fileInput.files.length) return;
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+
+            setLoading(true);
+            try {
+                const response = await fetch('/api/report/ingest', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'registro_actividades_procesado.xlsx';
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    alert('Ingesta completada con éxito. Se ha descargado el archivo de resultados.');
+                    clearFile();
+                } else {
+                    const err = await response.json();
+                    alert('Error en la ingesta: ' + (err.error || 'Desconocido'));
+                }
+            } catch (error) {
+                console.error(error);
+                alert('Error de conexión al subir archivo');
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        async function loadTasks() {
+            const tbody = document.getElementById('tasksTableBody');
+            tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-4 text-center">Cargando tareas...</td></tr>';
+            document.getElementById('taskSearchInput').value = ''; // Limpiar buscador al cargar
+
+            try {
+                const response = await fetch('/api/report/tasks');
+                if (response.ok) {
+                    window.allTasks = await response.json(); // Guardar globalmente para filtrar
+                    renderTasks(window.allTasks);
+                } else {
+                    tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-4 text-center text-red-500">Error al cargar tareas</td></tr>';
+                }
+            } catch (error) {
+                tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-4 text-center text-red-500">Error de conexión</td></tr>';
+            }
+        }
+
+        function renderTasks(tasks) {
+            const tbody = document.getElementById('tasksTableBody');
+            if (tasks.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">No hay tareas que coincidan</td></tr>';
+                return;
+            }
+            tbody.innerHTML = '';
+            tasks.forEach(task => {
+                // Determinar la mejor fecha de inicio disponible
+                const startDate = task.fields?.customfield_10715 || task.fields?.customfield_10015 || task.fields?.startDate || task.fields?.startdate || task.fields?.duedate || 'N/A';
+                const formattedStartDate = (startDate !== 'N/A' && startDate.length >= 10) ? startDate.substring(0, 10) : startDate;
+                const timeSpent = task.fields?.timetracking?.timeSpent || '0h';
+
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${task.key}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${task.fields?.summary || 'Sin título'}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${formattedStartDate}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${timeSpent}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                            ${task.fields?.status?.name || 'N/A'}
+                        </span>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function filterTasks() {
+            const query = document.getElementById('taskSearchInput').value.toLowerCase();
+            if (!window.allTasks) return;
+            
+            const filtered = window.allTasks.filter(task => {
+                const key = (task.key || '').toLowerCase();
+                const summary = (task.fields?.summary || '').toLowerCase();
+                return key.includes(query) || summary.includes(query);
+            });
+            
+            renderTasks(filtered);
+        }
+
+        async function downloadSubtaskReport(key) {
+            if (!key) {
+                alert('Por favor ingresa una Key de tarea');
+                return;
+            }
+            setLoading(true);
+            try {
+                const response = await fetch(`/api/report/subtasks/${key}`);
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `analisis-subtareas-${key}.pdf`;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                } else {
+                    alert('Error al generar el reporte de subtareas');
+                }
+            } catch (error) {
+                alert('Error de conexión');
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        function setLoading(isLoading) {
+            document.getElementById('loading').style.display = isLoading ? 'flex' : 'none';
+        }
+    </script>
+</body>
+</html>
